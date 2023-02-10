@@ -1,257 +1,6 @@
-import math
 import pygame
 import time
-import functools
-import dataclasses
-import typing
-
-
-class Point(typing.NamedTuple):
-    x: float
-    y: float
-
-    def __ge__(self, other):
-        return self.x >= other.x and self.y >= other.y
-
-    def __gt__(self, other):
-        return self.x > other.x or self.y > other.y
-
-    def __le__(self, other):
-        return self.x <= other.x and self.y <= other.y
-
-    def __lt__(self, other):
-        return self.x < other.x or self.y < other.y
-
-    def __add__(self, other):
-        return Point(self.x + other.x, self.y + other.y)
-
-    def __sub__(self, other):
-        return Point(self.x - other.x, self.y - other.y)
-
-    def __mul__(self, other):
-        return Point(self.x * other.x, self.y * other.y)
-
-    def __rmul__(self, other: float):
-        return Point(self.x * other, self.y * other)
-
-    def __div__(self, other):
-        return Point(self.x / other.x, self.y / other.y)
-
-    def cross(self, other):
-        return self.x * other.y - self.y * other.x
-    
-    def dot(self, other):
-        return self.x * other.x + self.y * other.y
-
-    def length(self):
-        return math.sqrt(self.dot(self))
-
-    def direction(self):
-        normal = self.normal()
-        return math.acos(normal.x) if normal.y <= 0.0 else -math.acos(normal.x)
-
-    def normal(self):
-        length = self.length()
-        if length == 0.0:
-            return self
-        return Point(self.x / length, self.y / length)
-
-
-class PerfTimer:
-    def __init__(self, name: str):
-        self.__name = name
-        self.__start = time.perf_counter()
-    
-    def log(self):
-        elapsed = time.perf_counter() - self.__start
-        print(f"{self.__name} took {elapsed * 1000.0}ms to run.")
-
-
-# Floating point math is hard, and trying to find a point on a line
-# can result in some mismatches in floating point values, so we go for "close"
-def in_range(min_, max_, value):
-    return (min_ - 0.0000001) <= value <= (max_ + 0.0000001)
-
-
-class Line(typing.NamedTuple):
-    origin: Point
-    slope: float
-
-
-# Constant used to determine what a Segment's forward normal should be
-ForwardDirection = Point(math.cos(math.pi / 2), math.sin(math.pi / 2))
-LeftDirection = Point(-math.sin(math.pi / 2), math.cos(math.pi / 2))
-
-@dataclasses.dataclass(unsafe_hash=True)
-class Segment:
-    start: Point
-    end: Point
-
-    @functools.cached_property
-    def min_x(self):
-        return min(self.start.x, self.end.x)
-
-    @functools.cached_property
-    def max_x(self):
-        return max(self.start.x, self.end.x)
-
-    @functools.cached_property
-    def min_y(self):
-        return min(self.start.y, self.end.y)
-
-    @functools.cached_property
-    def max_y(self):
-        return max(self.start.y, self.end.y)
-
-    @functools.cached_property
-    def slope(self):
-        if self.start.x == self.end.x:
-            return 1e100
-        else:
-            return (self.end.y - self.start.y) / (self.end.x - self.start.x)
-
-    @functools.cached_property
-    def cross(self):
-        return self.start.cross(self.end)
-
-    @functools.cached_property
-    def delta(self):
-        return self.end - self.start
-
-    @functools.cached_property
-    def invdelta(self):
-        return self.start - self.end
-
-    @functools.cached_property
-    def length(self):
-        return self.delta.length()
-
-    @functools.cached_property
-    def direction(self):
-        return math.acos(self.normal.x) if self.normal.y <= 0.0 else -math.acos(self.normal.x)
-
-    @functools.cached_property
-    def normal(self):
-        return self.delta.normal()
-
-    @functools.cached_property
-    def forward(self):
-        return (self.normal.x * ForwardDirection + self.normal.y * LeftDirection).normal()
-
-    @functools.cached_property
-    def line(self):
-        return Line(self.start, self.slope)
-    
-    def intercept(self, other):
-        if not (
-            other.min_x < self.max_x
-            and other.max_x > self.min_x
-            and other.min_y < self.max_y
-            and other.max_y > self.min_y
-        ):
-            return None
-
-        a = self.invdelta
-        b = other.invdelta
-        across = self.cross
-        bcross = other.cross
-        determinant = a.x * b.y - a.y * b.x
-        
-        # If the determinant is 0, the lines are parallel and do not intersect
-        if determinant != 0.0:
-            p = Point(
-                (across * b.x - a.x * bcross) / determinant,
-                (across * b.y - a.y * bcross) / determinant
-            )
-            if other.on_segment(p) and self.on_segment(p):
-                return p
-        
-        return None
-
-    def on_segment(self, p: Point):
-        return in_range(self.min_x, self.max_x, p.x) and in_range(
-            self.min_y, self.max_y, p.y
-        )
-    
-    def ray(self):
-        # Introduce a tiny bit of error to fix a bug with rays
-        # not intersecting walls when we're axis-aligned.
-        return Ray(self.start, self.direction + math.pi / 2)
-
-
-@dataclasses.dataclass
-class Ray:
-    start: Point
-    angle: float
-
-    def to_line(self):
-        return Line(self.start, -math.tan(self.angle - math.pi / 2))
-
-    def distant_point(self):
-        return Point(
-            self.start.x + (math.sin(self.angle) * 100),
-            self.start.y + (math.cos(self.angle) * 100),
-        )
-
-    def to_segment(self):
-        return Segment(self.start, self.distant_point())
-
-@dataclasses.dataclass
-class Matrix2:
-    matrix: tuple[tuple[float, float], tuple[float, float]]
-
-    def __getitem__(self, key):
-        return self.matrix[key]
-
-    def determinant(self):
-        return self[0][0] * self[1][1] - self[0][1] * self[1][0]
-
-def intercept(l1: Line, l2: Line):
-    # x=-(-y2+y1+m2*x2-m1*x1)/(m1-m2)
-    # solved from point-slope form
-    x = -(
-        -l2.origin.y + l1.origin.y + l2.slope * l2.origin.x - l1.slope * l1.origin.x
-    ) / (l1.slope - l2.slope)
-
-    # just plug it back into one of the line formulas and get the answer!
-    y = l1.slope * (x - l1.origin.x) + l1.origin.y
-
-    return Point(x, y)
-
-
-def intersect_ray(ray: Ray, segments):
-    return intersecting_segments(ray.to_segment(), segments)
-
-
-def intersecting_segments(input_: Segment, segments):
-    #pt = PerfTimer("intersecting_segments")
-    input_line = input_.line
-    result = []
-
-    for segment in segments:
-        p = input_.intercept(segment)
-        if p:
-            result.append((math.dist(input_.start, p), p, segment, input_))
-        #continue
-        #if not (
-        #    segment.min_x < input_.max_x
-        #    and segment.max_x > input_.min_x
-        #    and segment.min_y < input_.max_y
-        #    and segment.max_y > input_.min_y
-        #):
-        #    continue
-#
-        #segment_line = segment.line
-#
-        ## if not parallel
-        #if input_line.slope != segment_line.slope:
-        #    p = intercept(input_line, segment_line)
-        #    
-        #    if segment.on_segment(p) and input_.on_segment(p):
-        #        result.append((math.dist(input_.start, p), p, segment, input_))
-
-    #pt.log()
-    return result
+from geometry import *
 
 
 class Camera:
@@ -259,10 +8,11 @@ class Camera:
         self.location = location
         self.direction = direction
         self.viewing_angle = viewing_angle
+        self.planar_projection = True
 
     def try_move(self, distance, walls, direction: float = 0.0):
         new_location = self.location + Point(
-            distance * -math.sin(self.direction + direction), distance * -math.cos(self.direction + direction)
+            distance * math.sin(self.direction), distance * math.cos(self.direction)
         )
 
         proposed_move = Segment(self.location, new_location)
@@ -272,39 +22,45 @@ class Camera:
             self.location = new_location
 
     def rotate(self, angle):
-        self.direction += angle
-    
-    def forward(self):
-        return Point(math.sin(c.direction), math.cos(c.direction))
+        self.direction = (self.direction + angle) % (2 * math.pi)
 
     def rays(self, count):
         # The idea is that we are creating a line
         # through which to draw the rays, so we get a more correct
         # (not curved) distribution of rays, but we still need
         # to do a height correction later to flatten it out
+
         start_angle = self.direction - self.viewing_angle / 2
         end_angle = start_angle + self.viewing_angle
 
-        viewing_plane_start = self.location + Point(
-            math.sin(start_angle), math.cos(start_angle)
-        )
-        viewing_plane_end = self.location + Point(
-            math.sin(end_angle), math.cos(end_angle)
-        )
-
-        d_x = (viewing_plane_end.x - viewing_plane_start.x) / count
-        d_y = (viewing_plane_end.y - viewing_plane_start.y) / count
-
-        location = self.location
-
-        for current in range(count):
-            plane_point = Point(
-                viewing_plane_start.x + (d_x * current),
-                viewing_plane_start.y + (d_y * current),
+        if self.planar_projection:
+            viewing_plane_start = self.location + Point(
+                math.sin(start_angle), math.cos(start_angle)
             )
-            ray_segment = Segment(location, plane_point)
+            viewing_plane_end = self.location + Point(
+                math.sin(end_angle), math.cos(end_angle)
+            )
 
-            yield ray_segment.ray(), plane_point
+            d_x = (viewing_plane_end.x - viewing_plane_start.x) / count
+            d_y = (viewing_plane_end.y - viewing_plane_start.y) / count
+
+            location = self.location
+
+            for current in range(count):
+                plane_point = Point(
+                    viewing_plane_start.x + (d_x * current),
+                    viewing_plane_start.y + (d_y * current),
+                )
+                ray_segment = Segment(location, plane_point)
+
+                yield ray_segment.to_ray(), plane_point
+        else:
+            angle_slice = self.viewing_angle / count
+
+            for current in range(count):
+                yield Ray(
+                    self.location, start_angle + current * angle_slice
+                ), self.location
 
 
 def box(ul: Point):
@@ -599,24 +355,14 @@ mouse_sensitivity = 0.25
 
 screen = pygame.display.set_mode((width, height))
 
-c = Camera(Point(9, 14), math.pi, (width / height) * (math.pi / 4))
-m = MapDisplay(
-    map_wall_segments, # Map Walls to calculate Dimensions
-    (Point(2.0, 2.0), Point(2.0, 10.0)), # Padding for the 2d Display
-    (256, 256), # 2d Display Size
-    DebugOptions([
-        DebugOption(pygame.K_r, 'draw_rays', True),
-    ])
-)
+FOV = 2 * math.atan((width / 800) * math.tan((math.pi / 2) / 2))
+
+c = Camera(Point(-0.5, -0.5), math.pi / 2, FOV)
 
 frame = 0
 last_time = time.perf_counter()
 
-debug_options = DebugOptions([
-    DebugOption(pygame.K_p, 'use_planar_approximation', True),
-    DebugOption(pygame.K_c, 'use_alternate_coloring', False),
-    DebugOption(pygame.K_m, 'display_2d_map', True),
-])
+fisheye_distance_correction = True
 
 while True:
     pygame.display.get_surface().fill((0, 0, 0))
@@ -632,25 +378,18 @@ while True:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             pygame.quit()
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_1:
+                c.planar_projection = not c.planar_projection
+            if event.key == pygame.K_2:
+                fisheye_distance_correction = not fisheye_distance_correction
 
     keys = pygame.key.get_pressed()
 
-    m.tick(elapsed)
-    debug_options.toggle(elapsed)
-
-    movement = Point(0.0, 0.0)
-    movement_speed = 1.0
-    if keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]:
-        movement_speed *= 2.0
-
-    if keys[pygame.K_UP] or keys[pygame.K_w]:
-        movement += Point(1.0, 0.0)
-    if keys[pygame.K_DOWN] or keys[pygame.K_s]:
-        movement -= Point(1.0, 0.0)
-    if keys[pygame.K_a]:
-        movement += Point(0.0, 1.0)
-    if keys[pygame.K_d]:
-        movement -= Point(0.0, 1.0)
+    if keys[pygame.K_UP]:
+        c.try_move(0.08, map_wall_segments)
+    if keys[pygame.K_DOWN]:
+        c.try_move(-0.08, map_wall_segments)
     if keys[pygame.K_RIGHT]:
         c.rotate(math.pi / 3 * elapsed)
     if keys[pygame.K_LEFT]:
@@ -687,18 +426,16 @@ while True:
 
         # only draw the closest wall.
         if len(matches) > 0 and matches[0][0] != 0:
-            distance = matches[0][0]
-            color = (255, 255, 255)
-            
-            if use_planar_approximation:
-                distance = distance * math.cos(r.angle - c.direction)
-            
-            if use_alternate_coloring:
-                forward = matches[0][2].forward
-                dot = forward.dot(c.forward())
-                color = (int(128 + 127 * forward.x) * (-dot + 1.0) * 0.5, int(128 + 127 * forward.y) * (-dot + 1.0) * 0.5, 0)
+            distance_from_eye = matches[0][0]
 
-            wall_height = (height * 0.75) / distance # Distance
+            # Distance correction from https://gamedev.stackexchange.com/questions/45295/raycasting-fisheye-effect-question
+            corrected_distance = (
+                distance_from_eye * math.cos(c.direction - r.angle)
+                if fisheye_distance_correction
+                else distance_from_eye
+            )
+
+            wall_height = (height * 0.75) / corrected_distance
             if wall_height > height:
                 wall_height = height + 2
 
