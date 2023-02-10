@@ -36,6 +36,9 @@ class Point(typing.NamedTuple):
 
     def __div__(self, other):
         return Point(self.x / other.x, self.y / other.y)
+
+    def cross(self, other):
+        return self.x * other.y - self.y * other.x
     
     def dot(self, other):
         return self.x * other.x + self.y * other.y
@@ -54,6 +57,15 @@ class Point(typing.NamedTuple):
         return Point(self.x / length, self.y / length)
 
 
+class PerfTimer:
+    def __init__(self, name: str):
+        self.__name = name
+        self.__start = time.perf_counter()
+    
+    def log(self):
+        elapsed = time.perf_counter() - self.__start
+        print(f"{self.__name} took {elapsed * 1000.0}ms to run.")
+
 
 # Floating point math is hard, and trying to find a point on a line
 # can result in some mismatches in floating point values, so we go for "close"
@@ -66,12 +78,12 @@ class Line(typing.NamedTuple):
     slope: float
 
 
+# Constant used to determine what a Segment's forward normal should be
+ForwardDirection = Point(math.cos(math.pi / 2), math.sin(math.pi / 2))
+LeftDirection = Point(-math.sin(math.pi / 2), math.cos(math.pi / 2))
+
 @dataclasses.dataclass(unsafe_hash=True)
 class Segment:
-    # Constant used to determine what a Segment's forward normal should be
-    ForwardDirection = Point(math.cos(math.pi / 2), math.sin(math.pi / 2))
-    LeftDirection = Point(-math.sin(math.pi / 2), math.cos(math.pi / 2))
-
     start: Point
     end: Point
 
@@ -99,8 +111,20 @@ class Segment:
             return (self.end.y - self.start.y) / (self.end.x - self.start.x)
 
     @functools.cached_property
+    def cross(self):
+        return self.start.cross(self.end)
+
+    @functools.cached_property
+    def delta(self):
+        return self.end - self.start
+
+    @functools.cached_property
+    def invdelta(self):
+        return self.start - self.end
+
+    @functools.cached_property
     def length(self):
-        return (self.start - self.end).length()
+        return self.delta.length()
 
     @functools.cached_property
     def direction(self):
@@ -108,15 +132,41 @@ class Segment:
 
     @functools.cached_property
     def normal(self):
-        return (self.end - self.start).normal()
+        return self.delta.normal()
 
     @functools.cached_property
     def forward(self):
-        return (self.normal.x * Segment.ForwardDirection + self.normal.y * Segment.LeftDirection).normal()
+        return (self.normal.x * ForwardDirection + self.normal.y * LeftDirection).normal()
 
     @functools.cached_property
     def line(self):
         return Line(self.start, self.slope)
+    
+    def intercept(self, other):
+        if not (
+            other.min_x < self.max_x
+            and other.max_x > self.min_x
+            and other.min_y < self.max_y
+            and other.max_y > self.min_y
+        ):
+            return None
+
+        a = self.invdelta
+        b = other.invdelta
+        across = self.cross
+        bcross = other.cross
+        determinant = a.x * b.y - a.y * b.x
+        
+        # If the determinant is 0, the lines are parallel and do not intersect
+        if determinant != 0.0:
+            p = Point(
+                (across * b.x - a.x * bcross) / determinant,
+                (across * b.y - a.y * bcross) / determinant
+            )
+            if other.on_segment(p) and self.on_segment(p):
+                return p
+        
+        return None
 
     def on_segment(self, p: Point):
         return in_range(self.min_x, self.max_x, p.x) and in_range(
@@ -126,8 +176,7 @@ class Segment:
     def ray(self):
         # Introduce a tiny bit of error to fix a bug with rays
         # not intersecting walls when we're axis-aligned.
-        episilon = 0.0001
-        return Ray(self.start, self.direction + math.pi / 2 + episilon)
+        return Ray(self.start, self.direction + math.pi / 2)
 
 
 @dataclasses.dataclass
@@ -136,11 +185,7 @@ class Ray:
     angle: float
 
     def to_line(self):
-        s = math.sin(self.angle)
-        if s == 0:
-            return Line(self.start, 1e100)
-        else:
-            return Line(self.start, math.cos(self.angle) / s)
+        return Line(self.start, -math.tan(self.angle - math.pi / 2))
 
     def distant_point(self):
         return Point(
@@ -151,6 +196,15 @@ class Ray:
     def to_segment(self):
         return Segment(self.start, self.distant_point())
 
+@dataclasses.dataclass
+class Matrix2:
+    matrix: tuple[tuple[float, float], tuple[float, float]]
+
+    def __getitem__(self, key):
+        return self.matrix[key]
+
+    def determinant(self):
+        return self[0][0] * self[1][1] - self[0][1] * self[1][0]
 
 def intercept(l1: Line, l2: Line):
     # x=-(-y2+y1+m2*x2-m1*x1)/(m1-m2)
@@ -170,28 +224,33 @@ def intersect_ray(ray: Ray, segments):
 
 
 def intersecting_segments(input_: Segment, segments):
+    #pt = PerfTimer("intersecting_segments")
     input_line = input_.line
-
     result = []
 
     for segment in segments:
-        if not (
-            segment.min_x < input_.max_x
-            and segment.max_x > input_.min_x
-            and segment.min_y < input_.max_y
-            and segment.max_y > input_.min_y
-        ):
-            continue
+        p = input_.intercept(segment)
+        if p:
+            result.append((math.dist(input_.start, p), p, segment, input_))
+        #continue
+        #if not (
+        #    segment.min_x < input_.max_x
+        #    and segment.max_x > input_.min_x
+        #    and segment.min_y < input_.max_y
+        #    and segment.max_y > input_.min_y
+        #):
+        #    continue
+#
+        #segment_line = segment.line
+#
+        ## if not parallel
+        #if input_line.slope != segment_line.slope:
+        #    p = intercept(input_line, segment_line)
+        #    
+        #    if segment.on_segment(p) and input_.on_segment(p):
+        #        result.append((math.dist(input_.start, p), p, segment, input_))
 
-        segment_line = segment.line
-
-        # if not parallel
-        if input_line.slope != segment_line.slope:
-            p = intercept(input_line, segment_line)
-
-            if segment.on_segment(p) and input_.on_segment(p):
-                result.append((math.dist(input_.start, p), p, segment, input_))
-
+    #pt.log()
     return result
 
 
@@ -567,6 +626,7 @@ while True:
     new_time = time.perf_counter()
     elapsed, last_time = new_time - last_time, new_time
 
+    pygame.display.set_caption(f"{1.0 / elapsed} fps")
     #print(f"{1 / elapsed} fps ({c.location.x},{c.location.y})")
 
     for event in pygame.event.get():
