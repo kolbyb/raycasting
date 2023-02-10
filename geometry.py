@@ -20,6 +20,28 @@ class Point(typing.NamedTuple):
     def __add__(self, other):
         return Point(self.x + other.x, self.y + other.y)
 
+    def __sub__(self, other):
+        return Point(self.x - other.x, self.y - other.y)
+
+    def angle(self):
+        normal = self.normal()
+        return math.acos(normal.x) if normal.y <= 0.0 else -math.acos(normal.x)
+
+    def cross(self, other):
+        return self.x * other.y - self.y * other.x
+    
+    def dot(self, other):
+        return self.x * other.x + self.y * other.y
+
+    def length(self):
+        return math.sqrt(self.dot(self))
+
+    def normal(self):
+        length = self.length()
+        if length == 0.0 or length == 1.0:
+            return self
+        return Point(self.x / length, self.y / length)
+
 
 class Line(typing.NamedTuple):
     origin: Point
@@ -30,6 +52,22 @@ class Line(typing.NamedTuple):
 class Segment:
     start: Point
     end: Point
+
+    @functools.cached_property
+    def angle(self):
+        return self.normal.angle()
+
+    @functools.cached_property
+    def cross(self):
+        return self.start.cross(self.end)
+
+    @functools.cached_property
+    def delta(self):
+        return self.end - self.start
+
+    @functools.cached_property
+    def invdelta(self):
+        return self.start - self.end
 
     @functools.cached_property
     def min_x(self):
@@ -46,6 +84,10 @@ class Segment:
     @functools.cached_property
     def max_y(self):
         return max(self.start.y, self.end.y)
+
+    @functools.cached_property
+    def normal(self):
+        return self.delta.normal()
 
     @functools.cached_property
     def slope(self):
@@ -79,13 +121,35 @@ class Segment:
             # no possible valid Ray object
             raise RuntimeError("Cannot create Ray from identical segment points")
 
-        # Correct from angle above x axis as returned by atan2, to angle
+        # Correct from angle above x axis as returned by angle calculation, to angle
         # away from y axis, as is in our coordinate system
-        return Ray(
-            self.start,
-            -math.atan2(self.end.y - self.start.y, self.end.x - self.start.x)
-            + math.pi / 2,
-        )
+        return Ray(self.start, self.angle + math.pi / 2)
+    
+    def intersect(self, other):
+        if not (
+            other.min_x < self.max_x
+            and other.max_x > self.min_x
+            and other.min_y < self.max_y
+            and other.max_y > self.min_y
+        ):
+            return None
+
+        a = self.invdelta
+        b = other.invdelta
+        determinant = a.x * b.y - a.y * b.x
+        
+        # The Segments are parallel if the determinant == 0.0
+        if determinant != 0.0:
+            across = self.cross
+            bcross = other.cross
+            p = Point(
+                (across * b.x - a.x * bcross) / determinant,
+                (across * b.y - a.y * bcross) / determinant
+            )
+            if other.in_bounds(p) and self.in_bounds(p):
+                return p
+        
+        return None
 
 
 @dataclasses.dataclass
@@ -130,26 +194,11 @@ def intersect_ray(ray: Ray, segments):
 
 
 def intersecting_segments(input_: Segment, segments):
-    input_line = input_.line
-
     result = []
 
     for segment in segments:
-        if not (
-            segment.min_x <= input_.max_x
-            and segment.max_x >= input_.min_x
-            and segment.min_y <= input_.max_y
-            and segment.max_y >= input_.min_y
-        ):
-            continue
-
-        segment_line = segment.line
-
-        # if not parallel
-        if input_line.slope != segment_line.slope:
-            p = intercept(input_line, segment_line)
-
-            if segment.in_bounds(p) and input_.in_bounds(p):
-                result.append((math.dist(input_.start, p), p, segment))
-
+        p = input_.intersect(segment)
+        if p:
+            result.append((math.dist(input_.start, p), p, segment))
+    
     return result
