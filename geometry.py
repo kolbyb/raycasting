@@ -17,11 +17,27 @@ class Point(typing.NamedTuple):
     x: float
     y: float
 
+    @classmethod
+    @property
+    def Forward(cls):
+        return Point(math.cos(math.pi * 0.5), math.sin(math.pi * 0.5))
+    
+    @classmethod
+    @property
+    def Right(cls):
+        return Point(-math.sin(math.pi * 0.5), -math.cos(math.pi * 0.5))
+
     def __add__(self, other):
         return Point(self.x + other.x, self.y + other.y)
 
     def __sub__(self, other):
         return Point(self.x - other.x, self.y - other.y)
+    
+    def __rmul__(self, other: float):
+        return Point(self.x * other, self.y * other)
+    
+    def __rdiv__(self, other: float):
+        return Point(self.x / other, self.y / other)
 
     def angle(self):
         normal = self.normal()
@@ -88,6 +104,10 @@ class Segment:
     @functools.cached_property
     def normal(self):
         return self.delta.normal()
+    
+    @functools.cached_property
+    def surface_normal(self):
+        return (self.normal.x * Point.Forward + self.normal.y * Point.Right)
 
     @functools.cached_property
     def slope(self):
