@@ -18,7 +18,7 @@ class Camera:
 
         proposed_move = Segment(self.location, new_location)
 
-        if len(intersect_segment(proposed_move, walls)) == 0:
+        if not proposed_move.intersect_list(walls).hit:
             # we don't intersect any wall, so we allow the move
             self.location = new_location
 
@@ -267,17 +267,11 @@ while True:
     last_color = (0,0,0)
 
     for r, segment_point in c.rays(width):
-        matches = intersect_ray(r, map_wall_segments)
-
-        def sort_criteria(line):
-            return line[0]
-
-        # sort by closest, and draw it
-        matches.sort(key=sort_criteria, reverse=False)
+        result = r.to_segment().intersect_list(map_wall_segments)
 
         # only draw the closest wall.
-        if len(matches) > 0 and matches[0][0] != 0:
-            distance_from_eye = matches[0][0]
+        if result.hit:
+            distance_from_eye = result.distance
 
             # Distance correction from https://gamedev.stackexchange.com/questions/45295/raycasting-fisheye-effect-question
             corrected_distance = (
@@ -294,11 +288,11 @@ while True:
             wall_start = (height - wall_height) / 2
             wall_end = wall_start + wall_height
 
-            sn = matches[0][2].surface_normal()
+            sn = result.segment.surface_normal()
             color = (128 + 127 * sn.x, 128 + 127 * sn.y, 0.0)
 
             # Draw edge if detected
-            if last_match != matches[0][2] and col != 0:
+            if last_match != result.segment and col != 0:
                 if last_match is None:
                     pygame.draw.line(
                         pygame.display.get_surface(),
@@ -327,7 +321,7 @@ while True:
                         screen.set_at((col, y), color)
 
             last_wall = (wall_start, wall_end)
-            last_match = matches[0][2]
+            last_match = result.segment
         else:
             # Look for transition from wall to empty space, draw edge
             if last_match is not None:
