@@ -1,6 +1,7 @@
 import pygame
 import time
 from geometry import *
+import math
 
 
 class Camera:
@@ -17,7 +18,7 @@ class Camera:
 
         proposed_move = Segment(self.location, new_location)
 
-        if len(intersecting_segments(proposed_move, walls)) == 0:
+        if len(intersect_segment(proposed_move, walls)) == 0:
             # we don't intersect any wall, so we allow the move
             self.location = new_location
 
@@ -141,7 +142,7 @@ def make_map(map_string):
         remove_list = []
         for s in result:
             for n in result:
-                if s.end.x == n.start.x and s.end.y == n.start.y and n.slope == s.slope:
+                if s.end.x == n.start.x and s.end.y == n.start.y and n.slope() == s.slope():
                     remove_list += [n, s]
                     result.append(
                         Segment(Point(s.start.x, s.start.y), Point(n.end.x, n.end.y))
@@ -151,7 +152,7 @@ def make_map(map_string):
                     s is not n
                     and s.end.x == n.end.x
                     and s.end.y == n.end.y
-                    and n.slope == s.slope
+                    and n.slope() == s.slope()
                 ):
                     remove_list += [n, s]
                     result.append(
@@ -164,7 +165,7 @@ def make_map(map_string):
                     s is not n
                     and s.start.x == n.start.x
                     and s.start.y == n.start.y
-                    and n.slope == s.slope
+                    and n.slope() == s.slope()
                 ):
                     remove_list += [n, s]
                     result.append(
@@ -221,7 +222,7 @@ screen = pygame.display.set_mode((width, height))
 
 FOV = 2 * math.atan((width / 800) * math.tan((math.pi / 2) / 2))
 
-c = Camera(Point(-0.5, -0.5), math.pi / 2, FOV)
+c = Camera(Point(10, 14), math.pi, FOV)
 
 frame = 0
 last_time = time.perf_counter()
@@ -263,6 +264,7 @@ while True:
 
     last_match = None
     last_wall = None
+    last_color = (0,0,0)
 
     for r, segment_point in c.rays(width):
         matches = intersect_ray(r, map_wall_segments)
@@ -284,6 +286,7 @@ while True:
                 else distance_from_eye
             )
 
+            corrected_distance = max(1.0e-09, round(corrected_distance * 100) / 100)
             wall_height = (height * 0.75) / corrected_distance
             if wall_height > height:
                 wall_height = height + 2
@@ -291,32 +294,37 @@ while True:
             wall_start = (height - wall_height) / 2
             wall_end = wall_start + wall_height
 
+            sn = matches[0][2].surface_normal()
+            color = (128 + 127 * sn.x, 128 + 127 * sn.y, 0.0)
+
             # Draw edge if detected
-            if last_match is not matches[0][2] and col != 0:
+            if last_match != matches[0][2] and col != 0:
                 if last_match is None:
                     pygame.draw.line(
                         pygame.display.get_surface(),
-                        (255, 255, 255),
+                        color,
                         (col, wall_start),
                         (col, wall_end),
                     )
                 else:
+                    wall_delta = wall_end - wall_start
+                    last_delta = last_wall[1] - last_wall[0]
                     pygame.draw.line(
                         pygame.display.get_surface(),
-                        (255, 255, 255),
+                        color if not math.fabs(wall_delta - last_delta) < 3.0 and wall_delta > last_delta else last_color,
                         (col, min(wall_start, last_wall[0])),
                         (col, max(wall_end, last_wall[1])),
                     )
             else:
                 # draw just top and bottom points otherwise
-                screen.set_at((col, int(wall_start)), (255, 255, 255))
-                screen.set_at((col, int(wall_end)), (255, 255, 255))
+                screen.set_at((col, int(wall_start)), color)
+                screen.set_at((col, int(wall_end)), color)
 
                 # and some texture...
                 texture_size = int(height / 50)
                 if col % texture_size == 0:
                     for y in range(int(wall_start), int(wall_end), texture_size):
-                        screen.set_at((col, y), (255, 255, 255))
+                        screen.set_at((col, y), color)
 
             last_wall = (wall_start, wall_end)
             last_match = matches[0][2]
@@ -325,12 +333,13 @@ while True:
             if last_match is not None:
                 pygame.draw.line(
                     pygame.display.get_surface(),
-                    (255, 255, 255),
+                    color,
                     (col, last_wall[0]),
                     (col, last_wall[1]),
                 )
             last_match = None
 
+        last_color = color
         col += 1
 
     pygame.display.flip()

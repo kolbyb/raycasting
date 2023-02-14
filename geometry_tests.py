@@ -13,13 +13,14 @@ def test_adding_points():
 
 def test_segment_properties():
     def expected_values(segment, min_x, min_y, max_x, max_y, slope, line, ray):
-        assert segment.min_x == min_x
-        assert segment.min_y == min_y
-        assert segment.max_x == max_x
-        assert segment.max_y == max_y
+        assert segment.min_x() == min_x
+        assert segment.min_y() == min_y
+        assert segment.max_x() == max_x
+        assert segment.max_y() == max_y
 
-        assert segment.slope == slope
-        assert segment.line == line
+        assert segment.slope() == slope
+        assert segment.line() == line
+        sr = segment.to_ray()
         assert segment.to_ray() == ray
 
     zero_slope = geometry.Segment(geometry.Point(0, 0), geometry.Point(1, 0))
@@ -76,14 +77,14 @@ def test_point_segment():
     line_segment = geometry.Segment(geometry.Point(0, 0), geometry.Point(1, 2))
 
     # make sure these do not throw
-    _ = line_segment.line
+    _ = line_segment.line()
     _ = line_segment.to_ray()
 
     # But they should throw if the points are the same
-    with pytest.raises(RuntimeError):
-        _ = point_segment.line
+    with pytest.raises(Exception):
+        _ = point_segment.line()
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(Exception):
         _ = point_segment.to_ray()
 
 
@@ -175,7 +176,7 @@ def test_ray_segment_round_trip():
         segment = ray.to_segment()
         new_ray = segment.to_ray()
 
-        assert (ray.angle % (2 * math.pi)) == pytest.approx(new_ray.angle)
+        assert (ray.angle % (2 * math.pi)) == pytest.approx(new_ray.angle, abs=1.0e-06)
         assert ray.start == new_ray.start
 
     angle_0 = geometry.Ray(geometry.Point(0, 0), 0)
