@@ -6,67 +6,7 @@ import sys
 import os
 
 cppyy.include("raycasting.hpp")
-from cppyy.gbl import World, MakeWorld, RayCastWorker
-
-
-class Camera:
-    def __init__(self, location: Point, direction, viewing_angle):
-        self.location = location
-        self.direction = direction
-        self.viewing_angle = viewing_angle
-        self.planar_projection = True
-
-    def try_move(self, distance, walls):
-        new_location = self.location + Point(
-            distance * math.sin(self.direction), distance * math.cos(self.direction)
-        )
-
-        proposed_move = Segment(self.location, new_location)
-
-        if not proposed_move.intersect_list(walls).hit:
-            # we don't intersect any wall, so we allow the move
-            self.location = new_location
-
-    def rotate(self, angle):
-        self.direction = (self.direction + angle) % (2 * math.pi)
-
-    def rays(self, count):
-        # The idea is that we are creating a line
-        # through which to draw the rays, so we get a more correct
-        # (not curved) distribution of rays, but we still need
-        # to do a height correction later to flatten it out
-
-        start_angle = self.direction - self.viewing_angle / 2
-        end_angle = start_angle + self.viewing_angle
-
-        if self.planar_projection:
-            viewing_plane_start = self.location + Point(
-                math.sin(start_angle), math.cos(start_angle)
-            )
-            viewing_plane_end = self.location + Point(
-                math.sin(end_angle), math.cos(end_angle)
-            )
-
-            d_x = (viewing_plane_end.x - viewing_plane_start.x) / count
-            d_y = (viewing_plane_end.y - viewing_plane_start.y) / count
-
-            location = self.location
-
-            for current in range(count):
-                plane_point = Point(
-                    viewing_plane_start.x + (d_x * current),
-                    viewing_plane_start.y + (d_y * current),
-                )
-                ray_segment = Segment(location, plane_point)
-
-                yield ray_segment.to_ray(), plane_point
-        else:
-            angle_slice = self.viewing_angle / count
-
-            for current in range(count):
-                yield Ray(
-                    self.location, start_angle + current * angle_slice
-                ), self.location
+from cppyy.gbl import World, MakeWorld, Camera, RayCastWorker
 
 
 def box(ul: Point):
@@ -368,19 +308,19 @@ while True:
     keys = pygame.key.get_pressed()
 
     if keys[pygame.K_UP]:
-        c.try_move(1.0 * elapsed, map_wall_segments)
+        c.try_move(1.0 * elapsed, w)
     if keys[pygame.K_DOWN]:
-        c.try_move(-1.0 * elapsed, map_wall_segments)
+        c.try_move(-1.0 * elapsed, w)
     if keys[pygame.K_RIGHT]:
-        c.rotate(math.pi / 60)
+        c.rotate(math.pi / 2 * elapsed)
     if keys[pygame.K_LEFT]:
-        c.rotate(-math.pi / 60)
+        c.rotate(-math.pi / 2 * elapsed)
 
     count = 0
     work: list[list[Segment]] = [[] * 1 for _ in range(len(workers))]
     current_worker = 0
     num_per_worker = int(1 + width / len(workers))
-    for r, segment_point in c.rays(width):
+    for r in c.rays(width):
         work[current_worker].append(r.to_segment())
         count += 1
         

@@ -22,6 +22,77 @@ std::shared_ptr<World> MakeWorld()
     return std::make_shared<World>();
 }
 
+class Camera
+{
+public:
+    Camera() = default;
+    Camera(const Point location, double direction, double viewing_angle) :
+        location(location),
+        direction(direction),
+        viewing_angle(viewing_angle)
+    {
+    }
+
+    Point  location = {};
+    double direction = 0.0;
+    double viewing_angle = 0.0;
+    bool   planar_projection = true;
+
+    void try_move(double Distance, World* World)
+    {
+        const Point Movement = Point(Distance * std::sin(direction), Distance * std::cos(direction));
+        const Segment ProposedMove = Segment(location, location + Movement);
+
+        if (!ProposedMove.intersect_list(World->walls).hit)
+        {
+            location = ProposedMove.end;
+        }
+    }
+
+    void rotate(double angle)
+    {
+        direction = std::fmod(direction + angle, math::Pi2);
+    }
+
+    [[nodiscard]] std::vector<Ray> rays(int Count) const
+    {
+        // The idea is that we are creating a line
+        // through which to draw the rays, so we get a more correct
+        // (not curved) distribution of rays, but we still need
+        // to do a height correction later to flatten it out
+
+        const double StartAngle = direction - viewing_angle / 2;
+        const double EndAngle = StartAngle + viewing_angle;
+        std::vector<Ray> Result;
+
+        Result.reserve(Count);
+        if (planar_projection)
+        {
+            const Point PlaneStart = location + Point(std::sin(StartAngle), std::cos(StartAngle));
+            const Point PlaneEnd = location + Point(std::sin(EndAngle), std::cos(EndAngle));
+            const Point Delta = (PlaneEnd - PlaneStart) / double(Count);
+
+            for (int Current = 0; Current < Count; ++Current)
+            {
+                const Point PlanePoint = Point(PlaneStart.x + (Delta.x * Current), PlaneStart.y + (Delta.y * Current));
+                const Segment ray_segment = Segment(location, PlanePoint);
+
+                Result.push_back(ray_segment.to_ray());
+            }
+        }
+        else
+        {
+            const double AngleSlice = viewing_angle / Count;
+
+            for (int Current = 0; Current < Count; ++Current)
+            {
+                Result.push_back(Ray(location, StartAngle + AngleSlice * Current));
+            }
+        }
+        return Result;
+    }
+};
+
 class RayCastWorker
 {
 public:
