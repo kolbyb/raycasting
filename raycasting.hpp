@@ -127,9 +127,7 @@ public:
     [[nodiscard]] const std::vector<IntersectResult> get_results()
     {
         auto Lock = std::unique_lock(mutex);
-
         work_condition.wait(Lock, [this](){ return results_available; });
-        results_available = false;
         return results;
     }
 
@@ -162,6 +160,7 @@ private:
                 work_condition.wait(Lock, [this](){ return work_available; });
                 work_available = false;
             }
+            results_available = false;
             do_work();
         }
     }
