@@ -89,6 +89,14 @@ public:
         return Point(x / PointLength, y / PointLength);
     }
 
+    [[nodiscard]] Point rotate(double radians) const
+    {
+        const double Cos = std::cos(radians);
+        const double Sin = std::sin(radians);
+
+        return Point(Point(Cos, Sin) * normal().x + Point(-Sin, Cos) * normal().y);
+    }
+
     [[nodiscard]] Point operator+(const Point& Other) const
     {
         return Point(x + Other.x, y + Other.y);
@@ -190,6 +198,8 @@ public:
     {
     }
 
+    static constexpr double SurfaceNormal = math::PiOver2;
+    
     Point start = Point(0.0, 0.0);
     Point end = Point(1.0, 1.0);
 
@@ -220,6 +230,26 @@ private:
 
 struct IntersectResult
 {
+    [[nodiscard]] bool operator<(const IntersectResult& Other) const
+    {
+        return hit && Other.hit ? distance < Other.distance : (hit ? true : false);
+    }
+
+    [[nodiscard]] bool operator>(const IntersectResult& Other) const
+    {
+        return hit && Other.hit ? distance > Other.distance : (hit ? true : false);
+    }
+
+    [[nodiscard]] bool operator==(const Segment& Other)
+    {
+        return segment == Other;
+    }
+
+    [[nodiscard]] friend bool operator==(const Segment& Other, const IntersectResult& Result)
+    {
+        return Other == Result.segment;
+    }
+
     Point   point = Point();
     Segment segment;
     double  distance = 0.0;

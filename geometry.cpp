@@ -66,7 +66,7 @@ Point Point::Right = Point(-std::sin(math::PiOver2), -std::cos(math::PiOver2));
 
 [[nodiscard]] Point Segment::surface_normal() const
 {
-    return Point(Point::Forward * normal().x + Point::Right * normal().y);
+    return normal().rotate(Segment::SurfaceNormal);
 }
 
 [[nodiscard]] double Segment::slope() const
