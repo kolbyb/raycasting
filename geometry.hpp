@@ -89,12 +89,17 @@ public:
         return Point(x / PointLength, y / PointLength);
     }
 
-    [[nodiscard]] Point rotate(double radians) const
+    [[nodiscard]] Point rotate(double Radians) const
     {
-        const double Cos = std::cos(radians);
-        const double Sin = std::sin(radians);
+        const double Cos = std::cos(Radians);
+        const double Sin = std::sin(Radians);
 
-        return Point(Point(Cos, Sin) * normal().x + Point(-Sin, Cos) * normal().y);
+        return Point(Point(Cos, Sin) * x + Point(-Sin, Cos) * y);
+    }
+
+    [[nodiscard]] Point rotate(const Point& Other) const
+    {
+        return Point(Point(x, y) * Other.x + Point(-x, y) * Other.y);
     }
 
     [[nodiscard]] Point operator+(const Point& Other) const
@@ -174,7 +179,7 @@ public:
     double angle = 0.0;
 
     [[nodiscard]] Point distant_point() const;
-    [[nodiscard]] Segment to_segment() const;
+    [[nodiscard]] Segment to_segment(double Distance=DistantPoint) const;
 
     [[nodiscard]] bool operator==(const Ray& Other) const
     {

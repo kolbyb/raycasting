@@ -1,9 +1,14 @@
 import pygame
 import time
 from geometry import *
+import dataclasses
+import typing
 import math
 import sys
 import os
+import json
+import bson
+import serialization
 
 cppyy.include("raycasting.hpp")
 from cppyy.gbl import World, MakeWorld, Camera, RayCastWorker
@@ -78,58 +83,198 @@ def make_map(map_string):
 
     # if any segment exists twice, then it was between two map items
     # and both can be removed!
-    result = [item for item in result if result.count(item) == 1]
+    #result = [item for item in result if result.count(item) == 1]
 
-    print(f"Filtered duplicated wall segments: {len(result)}")
+    #print(f"Filtered duplicated wall segments: {len(result)}")
 
-    cont = True
-    while cont:
-        remove_list = []
-        for s in result:
-            for n in result:
-                if s.end.x == n.start.x and s.end.y == n.start.y and n.slope() == s.slope():
-                    remove_list += [n, s]
-                    result.append(
-                        Segment(Point(s.start.x, s.start.y), Point(n.end.x, n.end.y))
-                    )
-                    break
-                elif (
-                    s is not n
-                    and s.end.x == n.end.x
-                    and s.end.y == n.end.y
-                    and n.slope() == s.slope()
-                ):
-                    remove_list += [n, s]
-                    result.append(
-                        Segment(
-                            Point(s.start.x, s.start.y), Point(n.start.x, n.start.y)
-                        )
-                    )
-                    break
-                elif (
-                    s is not n
-                    and s.start.x == n.start.x
-                    and s.start.y == n.start.y
-                    and n.slope() == s.slope()
-                ):
-                    remove_list += [n, s]
-                    result.append(
-                        Segment(Point(s.end.x, s.end.y), Point(n.end.x, n.end.y))
-                    )
-                    break
-
-            if len(remove_list) > 0:
-                break
-
-        if len(remove_list) == 0:
-            cont = False
-
-        for i in remove_list:
-            result.remove(i)
+    #cont = True
+    #while cont:
+    #    remove_list = []
+    #    for s in result:
+    #        for n in result:
+    #            if s.end.x == n.start.x and s.end.y == n.start.y and n.slope() == s.slope():
+    #                remove_list += [n, s]
+    #                result.append(
+    #                    Segment(Point(s.start.x, s.start.y), Point(n.end.x, n.end.y))
+    #                )
+    #                break
+    #            elif (
+    #                s is not n
+    #                and s.end.x == n.end.x
+    #                and s.end.y == n.end.y
+    #                and n.slope() == s.slope()
+    #            ):
+    #                remove_list += [n, s]
+    #                result.append(
+    #                    Segment(
+    #                        Point(s.start.x, s.start.y), Point(n.start.x, n.start.y)
+    #                    )
+    #                )
+    #                break
+    #            elif (
+    #                s is not n
+    #                and s.start.x == n.start.x
+    #                and s.start.y == n.start.y
+    #                and n.slope() == s.slope()
+    #            ):
+    #                remove_list += [n, s]
+    #                result.append(
+    #                    Segment(Point(s.end.x, s.end.y), Point(n.end.x, n.end.y))
+    #                )
+    #                break
+#
+    #        if len(remove_list) > 0:
+    #            break
+#
+    #    if len(remove_list) == 0:
+    #        cont = False
+#
+    #    for i in remove_list:
+    #        result.remove(i)
 
     print(f"Merged segments: {len(result)}")
 
     return result
+
+
+class DebugOption(typing.NamedTuple):
+    key: int
+    name: str
+    default_value: bool
+
+
+@dataclasses.dataclass
+class DebugOptions:
+    def __init__(self, options: list[DebugOption]):
+        self.__toggle_time = 0.0 # Simple elapsed time to prevent Debug options from flickering
+        self.__toggle_delay = 0.25
+        self.__options = list()
+        self.__option_values = dict()
+
+        for option in options:
+            self.__options.append(option)
+            self.__option_values[option.name] = option.default_value
+
+    def __getitem__(self, name: str) -> bool:
+        return self.__option_values[name]
+
+    def __setitem__(self, name: str, value: bool):
+        self.__option_values[name] = value
+
+    def toggle(self, elapsed: float):
+        self.__toggle_time = max(0.0, self.__toggle_time - elapsed)
+
+        if self.__toggle_time > 0.0:
+            return
+
+        keys = pygame.key.get_pressed()
+        for option in self.__options:
+            if keys[option.key]:
+                self[option.name] = not self[option.name]
+                self.__toggle_time = self.__toggle_delay
+
+class MapDisplay:
+    def __init__(self, segments: list[Segment], padding: tuple[Point, Point], display_size: tuple[float, float], debug_options: DebugOptions):
+        dimensions = MapDisplay.__calculate_dimensions(segments, padding)
+        dimension_delta = dimensions[1] - dimensions[0]
+
+        self.__dimensions = dimensions
+        self.__scale = max(dimension_delta.x, dimension_delta.y)
+        self.__display_size = display_size
+        self.__debug_options = debug_options
+
+    def tick(self, elapsed: float):
+        self.__debug_options.toggle(elapsed)
+
+    def draw(self, world: World, c: Camera, ray_results):
+        pygame.draw.rect(
+            pygame.display.get_surface(),
+            (8, 8, 8),
+            (0, 0, self.__display_size[0], self.__display_size[1]),
+        )
+
+        # Draw Wall Segments
+        for segment in world.walls:
+            start = self.map_point(segment.start)
+            end = self.map_point(segment.end)
+
+            if start and end:
+                pygame.draw.line(
+                    pygame.display.get_surface(),
+                    (192, 192, 192),
+                    (start.x, start.y),
+                    (end.x, end.y)
+                )
+
+        # Draw our Camera
+        camera_loc = self.map_point(c.location)
+        camera_left = self.map_point(Point(c.location.x + math.sin(c.direction + c.viewing_angle * 0.5), c.location.y + math.cos(c.direction + c.viewing_angle * 0.5)))
+        camera_right = self.map_point(Point(c.location.x + math.sin(c.direction - c.viewing_angle * 0.5), c.location.y + math.cos(c.direction - c.viewing_angle * 0.5)))
+        if camera_loc:
+            pygame.draw.circle(
+                pygame.display.get_surface(),
+                (255, 255, 255),
+                (camera_loc.x, camera_loc.y),
+                1.0
+            )
+
+        if camera_loc and camera_left:
+            pygame.draw.line(
+                pygame.display.get_surface(),
+                (255, 255, 255),
+                (camera_loc.x, camera_loc.y),
+                (camera_left.x, camera_left.y),
+                2
+            )
+
+        if camera_loc and camera_right:
+            pygame.draw.line(
+                pygame.display.get_surface(),
+                (255, 255, 255),
+                (camera_loc.x, camera_loc.y),
+                (camera_right.x, camera_right.y),
+                2
+            )
+    
+    def draw_rays(self, c: Camera, results):
+        # Draw Ray Results
+        if self.__debug_options['draw_rays']:
+            #start = self.map_point(c.location)
+
+            for result in results:
+                #if not result.hit:
+                #    continue
+                
+                start = self.map_point(result.start)
+                end = self.map_point(result.end)
+
+                if start and end:
+                    pygame.draw.line(
+                        pygame.display.get_surface(),
+                        (31, 192, 128),
+                        (start.x, start.y),
+                        (end.x, end.y)
+                    )
+
+    def map_point(self, point: Point):
+        if (point.x < self.__dimensions[0].x or point.y < self.__dimensions[0].y or
+            point.x > self.__dimensions[1].x or point.y > self.__dimensions[1].y):
+            return None
+
+        # The coordinate system is flipped, so subtract our x from the Map's max dimensions
+        return Point((self.__dimensions[1].x - point.x) / self.__scale * self.__display_size[0], (point.y - self.__dimensions[0].y) / self.__scale * self.__display_size[1])
+
+    def __calculate_dimensions(segments: list[Segment], padding: tuple[Point, Point]):
+        minimum = Point(0.0, 0.0)
+        maximum = Point(1.0, 1.0)
+
+        for segment in segments:
+            minimum.x = min(minimum.x, segment.min_x())
+            minimum.y = min(minimum.y, segment.min_y())
+            maximum.x = max(maximum.x, segment.max_x())
+            maximum.y = max(maximum.y, segment.max_y())
+
+        return (minimum - padding[0], maximum + padding[1])
 
 
 #
@@ -167,7 +312,7 @@ screen = pygame.display.set_mode((width, height), pygame.RESIZABLE)
 
 FOV = 2 * math.atan((width / 800) * math.tan((math.pi / 2) / 2))
 
-c = Camera(Point(10, 14), math.pi, FOV)
+c = Camera(Point(0.5, 0.5), 0, FOV)
 
 frame = 0
 last_time = time.perf_counter()
@@ -175,8 +320,44 @@ fps_elapsed = 0.0
 
 fisheye_distance_correction = True
 
+class PointHandler(serialization.CppyyTypeHandler):
+    @classmethod
+    def typename(cls) -> str:
+        return "Point"
+    
+    @classmethod
+    def serialize(cls, context: serialization.CppyyContext):
+        context.output.object = {"x": context.input.object.x, "y": context.input.object.y}
+
+    @classmethod
+    def deserialize(cls, context: serialization.CppyyContext):
+        context.output.object.x = context.input.object["x"]
+        context.output.object.y = context.input.object["y"]
+
+serializer = serialization.CppyySerializer(
+    #handlers=serialization.CppyySerializer.DefaultHandlers + [
+    #    PointHandler(),
+    #],
+    hints={
+        "Segment": serialization.CppyyTypeHint(["start", "end"]),
+        "Point": serialization.CppyyTypeHint(["x", "y"]),
+    }
+)
+
 w = MakeWorld()
-w.walls = map_wall_segments
+with open('custom.map', 'r') as file:
+    serializer.deserialize(w, json.load(file))
+#w.walls = map_wall_segments
+map_wall_segments = w.walls
+
+m = MapDisplay(
+     map_wall_segments, # Map Walls to calculate Dimensions
+     (Point(2.0, 2.0), Point(2.0, 10.0)), # Padding for the 2d Display
+     (256, 256), # 2d Display Size
+     DebugOptions([
+         DebugOption(pygame.K_r, 'draw_rays', True),
+     ])
+ )
 
 workers = [RayCastWorker(w.get_pointer()) for _ in range(os.cpu_count() or 1)]
 
@@ -215,13 +396,13 @@ def draw_results(rays, results, col_offset: int):
             sn = result.segment.surface_normal()
             color = (128 + 127 * sn.x, 128 + 127 * sn.y, 0.0)
             dn = sn.dot(rs.normal())
-            dn = 1.0 - (dn + 1.0) * 0.25
-            cn = sn.dot(rs.normal())
-            cn = 1.0 - (cn + 1.0) * 0.25
-            cn = cn * cn
-            dn = min(1.0, max(0.5, dn * cn))
-            dn = dn * min(1.0, max(0.0, 1.0 - min(4.0, corrected_distance) / 4.0))
-            dn = 0.125 + (dn * 0.875)
+            dn = 1.0 - (dn + 1.0) * 0.5
+            #cn = sn.dot(rs.normal())
+            #cn = 1.0 - (cn + 1.0) * 0.25
+            #cn = cn * cn
+            #dn = min(1.0, max(0.5, dn * cn))
+            #dn = dn * min(1.0, max(0.0, 1.0 - min(4.0, corrected_distance) / 4.0))
+            #dn = 0.125 + (dn * 0.875)
             color = (color[0] * dn, color[1] * dn, 0.0)
 
             # Draw edge if detected
@@ -269,6 +450,10 @@ def draw_results(rays, results, col_offset: int):
         last_color = color
         col += 1
 
+w = MakeWorld()
+with open('custom.map', 'r') as file:
+    serializer.deserialize(w, json.load(file))
+
 while True:
     pygame.display.get_surface().fill((0, 0, 0))
     pygame.draw.rect(
@@ -307,14 +492,24 @@ while True:
 
     keys = pygame.key.get_pressed()
 
+    m.tick(elapsed)
+
     if keys[pygame.K_UP]:
-        c.try_move(1.0 * elapsed, w)
+        c.try_move(0.0, 2.0 * elapsed, w)
     if keys[pygame.K_DOWN]:
-        c.try_move(-1.0 * elapsed, w)
+        c.try_move(-math.pi, 2.0 * elapsed, w)
     if keys[pygame.K_RIGHT]:
         c.rotate(math.pi / 2 * elapsed)
     if keys[pygame.K_LEFT]:
         c.rotate(-math.pi / 2 * elapsed)
+
+    center = Ray(c.location, c.direction).to_segment()
+    result = center.intersect_list(w.walls)
+    if result.hit and center.normal().dot(result.segment.surface_normal()) > 0.0:
+        for wall in w.walls:
+            if wall == result.segment:
+                wall.start, wall.end = result.segment.end, result.segment.start
+                print(f"{center.normal().dot(wall.surface_normal())}")
 
     count = 0
     work: list[list[Segment]] = [[] * 1 for _ in range(len(workers))]
@@ -327,11 +522,17 @@ while True:
         if len(work[current_worker]) == num_per_worker or count == width:
             workers[current_worker].set_work(work[current_worker])
             current_worker += 1
-    
+
     current_worker = 0
     for worker in workers:
         results = worker.get_results()
         draw_results(work[current_worker], results, num_per_worker * current_worker)
         current_worker += 1
-    
+
+    m.draw(w, c, None)
+    #for worker in workers:
+    #    results = worker.get_results()
+    #    m.draw_rays(c, results)
+    m.draw_rays(c, c.move_rays(0.0))
+
     pygame.display.flip()

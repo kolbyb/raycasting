@@ -28,17 +28,18 @@ w = MakeWorld()
 
 class EditorCamera():
     def __init__(self: Self):
-        self.__zoom_clamp = (16.0, 100.0)
+        self.__zoom_clamp = (8.0, 400.0)
         self.__move_speed = 2.0
         self.location = Point(0.0, 0.0)
         self.zoom = self.__zoom_clamp[0]
         self.__drawing_wall = False
         self.__in_progress_wall = Segment()
+        self.__editing_wall = False
     
     def adjust_zoom(self: Self, count: float):
         self.zoom = min(self.__zoom_clamp[1], max(self.__zoom_clamp[0], e.zoom + event.y * 2.0))
 
-    def tick(self: Self, elapsed: float): 
+    def tick(self: Self, elapsed: float):
         keys = pygame.key.get_pressed()
         zoom_accel = self.__zoom_clamp[1] / self.zoom
         move = Point(0.0, 0.0)
@@ -48,35 +49,50 @@ class EditorCamera():
         if keys[pygame.K_DOWN]:
             move.y += 1.0
         if keys[pygame.K_RIGHT]:
-            move.x += 1.0
-        if keys[pygame.K_LEFT]:
             move.x -= 1.0
+        if keys[pygame.K_LEFT]:
+            move.x += 1.0
         
         self.location += move * self.__move_speed * zoom_accel * elapsed
 
     def draw(self: Self):
-        grid_half = min(self.__zoom_clamp[0], center.x / self.zoom)
+        width, height = pygame.display.get_window_size()
+        self.__center = Point(width * 0.5, height * 0.5)
+        grid_half = min(self.__zoom_clamp[0], self.__center.x / self.zoom)
         grid_center = Point(round(self.location.x), round(self.location.y))
         horizontal = Point(width * 0.5, 0.0)
         vertical = Point(0.0, height * 0.5)
 
-        count_half = int(width / grid_half) + 1
+        grid_square_half = int(width / grid_half / 2)
+        grid_count_half = int(width / grid_square_half * 3.2)
+
+        cursor_scale = (10.0 / self.zoom, 7.07 / self.zoom)
 
         cursor_relative = pygame.mouse.get_pos()
         cursor_point = self.__unprojected_point_(Point(cursor_relative[0], cursor_relative[1]))
-        cursor_snapped_point = Point(round(cursor_point.x * 2.0) / 2.0, round(cursor_point.y * 2.0) / 2.0)
+        cursor_snapped_point = Point(round(cursor_point.x * 8.0) / 8.0, round(cursor_point.y * 8.0) / 8.0)
         cursor_segments = [
-            Segment(Point(-0.6, -0.5) + cursor_point, Point(0.4, 0.5) + cursor_point),
-            Segment(Point(0.6, -0.5) + cursor_point, Point(-0.4, 0.5) + cursor_point),
-            Segment(Point(-0.4, -0.5) + cursor_point, Point(0.6, 0.5) + cursor_point),
-            Segment(Point(0.4, -0.5) + cursor_point, Point(-0.6, 0.5) + cursor_point),
-            Segment(Point(0.5, -0.5) + cursor_point, Point(0.5, 0.5) + cursor_point),
-            Segment(Point(-0.5, -0.5) + cursor_point, Point(-0.5, 0.5) + cursor_point),
-            Segment(Point(0.5, 0.5) + cursor_point, Point(-0.5, 0.5) + cursor_point),
-            Segment(Point(0.5, -0.5) + cursor_point, Point(-0.5, -0.5) + cursor_point),
+            #Segment(Point(-0.6, -0.5) + cursor_point, Point(0.4, 0.5) + cursor_point),
+            #Segment(Point(0.6, -0.5) + cursor_point, Point(-0.4, 0.5) + cursor_point),
+            #Segment(Point(-0.4, -0.5) + cursor_point, Point(0.6, 0.5) + cursor_point),
+            #Segment(Point(0.4, -0.5) + cursor_point, Point(-0.6, 0.5) + cursor_point),
+            #Segment(Point(0.5, -0.5) + cursor_point, Point(0.5, 0.5) + cursor_point),
+            #Segment(Point(-0.5, -0.5) + cursor_point, Point(-0.5, 0.5) + cursor_point),
+            #Segment(Point(0.5, 0.5) + cursor_point, Point(-0.5, 0.5) + cursor_point),
+            #Segment(Point(0.5, -0.5) + cursor_point, Point(-0.5, -0.5) + cursor_point),
+
+            Segment(cursor_point, Point(-cursor_scale[0],  0.00)            + cursor_point),
+            Segment(cursor_point, Point(-cursor_scale[1], -cursor_scale[1]) + cursor_point),
+            Segment(cursor_point, Point( 0.00,            -cursor_scale[0]) + cursor_point),
+            Segment(cursor_point, Point( cursor_scale[1], -cursor_scale[1]) + cursor_point),
+            Segment(cursor_point, Point( cursor_scale[0],  0.00)            + cursor_point),
+            Segment(cursor_point, Point( cursor_scale[1],  cursor_scale[1]) + cursor_point),
+            Segment(cursor_point, Point( 0.00,             cursor_scale[0]) + cursor_point),
+            Segment(cursor_point, Point(-cursor_scale[1],  cursor_scale[1]) + cursor_point),
         ]
 
-        for n in range(-count_half, count_half):
+        print(f"{grid_half}, {grid_square_half}, {grid_count_half}")
+        for n in range(-grid_count_half, grid_count_half):
             hstart = Point(0, n) + grid_center
             vstart = Point(n, 0) + grid_center
             s1, e1 = self.__projected_segment__(Segment(hstart - horizontal, hstart + horizontal))
@@ -115,13 +131,13 @@ class EditorCamera():
 
         remove_wall = None
         for wall in w.walls:
-            intersected = wall == cursor_intersection 
+            intersected = (self.__editing_wall and self.__in_progress_wall == wall) or (not self.__editing_wall and wall == cursor_intersection)
             self.__draw_wall__(wall, color=((191, 196, 201) if not intersected else (221, 176, 31)), draw_surface_normal=intersected)
 
+            closest_vertex = min([wall.start, wall.end], key=lambda point: (point - cursor_point).length())
+            is_start = closest_vertex == wall.start
             if intersected:
                 start, end = self.__projected_segment__(wall)
-                closest_vertex = min([wall.start, wall.end], key=lambda point: (point - cursor_intersection.point).length())
-                is_start = closest_vertex == wall.start
                 vertex_screen = start if is_start else end
                 pygame.draw.circle(
                     pygame.display.get_surface(),
@@ -135,31 +151,45 @@ class EditorCamera():
                     vertex_screen,
                     5.0
                 )
+
+                if pygame.key.get_pressed()[pygame.K_f]:
+                    start = Point(wall.start)
+                    wall.start, wall.end = wall.end, start
                 
-                if not self.__drawing_wall and pygame.mouse.get_pressed()[0]:
-                    if is_start and not (math.isclose(cursor_snapped_point.x, wall.end.x) and math.isclose(cursor_snapped_point.y, wall.end.y)):
-                        wall.start = cursor_snapped_point
-                    elif not is_start and not (math.isclose(cursor_snapped_point.x, wall.start.x) and math.isclose(cursor_snapped_point.y, wall.start.y)):
-                        wall.end = cursor_snapped_point
+                if self.__drawing_wall or not pygame.key.get_pressed()[pygame.K_LSHIFT]:
+                    if not self.__drawing_wall and (not self.__editing_wall or self.__in_progress_wall == wall) and pygame.mouse.get_pressed()[0]:
+                        self.__editing_wall = True
+                        self.__in_progress_wall = wall
                 
-                if not self.__drawing_wall and pygame.mouse.get_pressed()[2]:
+                if not self.__drawing_wall and not self.__editing_wall and pygame.mouse.get_pressed()[2]:
                     remove_wall = wall
         
+            if self.__editing_wall and self.__in_progress_wall == wall:
+                if not pygame.mouse.get_pressed()[0]:
+                    self.__editing_wall = False
+                    self.__in_progress_wall = None
+                
+                if is_start and not (math.isclose(cursor_snapped_point.x, wall.end.x) and math.isclose(cursor_snapped_point.y, wall.end.y)):
+                    wall.start = cursor_snapped_point
+                elif not is_start and not (math.isclose(cursor_snapped_point.x, wall.start.x) and math.isclose(cursor_snapped_point.y, wall.start.y)):
+                    wall.end = cursor_snapped_point
+
         if remove_wall is not None:
             w.walls.erase(remove_wall)
     
-        if (self.__drawing_wall or not cursor_intersection.hit) and pygame.mouse.get_pressed()[0]:
-            if not self.__drawing_wall:
-                self.__drawing_wall = True
-                self.__in_progress_wall = Segment(cursor_snapped_point, cursor_snapped_point)
-            else:
-                self.__in_progress_wall.end = cursor_snapped_point
-            
-            self.__draw_wall__(self.__in_progress_wall, color=(92, 178, 204), draw_surface_normal=True)
-        elif self.__drawing_wall and not pygame.mouse.get_pressed()[0]:
-            if self.__in_progress_wall.start != self.__in_progress_wall.end:
-                w.walls.push_back(self.__in_progress_wall)
-            self.__drawing_wall = False
+        if not self.__editing_wall:
+            if (self.__drawing_wall or not cursor_intersection.hit) and pygame.mouse.get_pressed()[0]:
+                if not self.__drawing_wall:
+                    self.__drawing_wall = True
+                    self.__in_progress_wall = Segment(cursor_snapped_point, cursor_snapped_point)
+                else:
+                    self.__in_progress_wall.end = cursor_snapped_point
+                
+                self.__draw_wall__(self.__in_progress_wall, color=(92, 178, 204), draw_surface_normal=True)
+            elif self.__drawing_wall and not pygame.mouse.get_pressed()[0]:
+                if self.__in_progress_wall.start != self.__in_progress_wall.end:
+                    w.walls.push_back(self.__in_progress_wall)
+                self.__drawing_wall = False
 
     def __draw_wall__(self: Self, wall: Segment, color: tuple[int, int, int]=(204,92,92), draw_surface_normal: bool = False):
         start, end = self.__projected_segment__(wall)
@@ -206,14 +236,14 @@ class EditorCamera():
         )
 
     def __projected_point__(self: Self, point: Point):
-        projected = (point - self.location) * self.zoom + center
+        projected = Point(self.location.x - point.x, point.y - self.location.y) * self.zoom + self.__center
         return (projected.x, projected.y)
 
     def __projected_segment__(self: Self, segment: Segment):
         return self.__projected_point__(segment.start), self.__projected_point__(segment.end)
 
     def __unprojected_point_(self: Self, point: Point) -> Point:
-        return (point - center) / self.zoom + self.location
+        return Point(self.__center.x - point.x, point.y - self.__center.y) / self.zoom + self.location
 
 e = EditorCamera()
 

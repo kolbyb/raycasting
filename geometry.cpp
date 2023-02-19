@@ -12,9 +12,12 @@ Point Point::Right = Point(-std::sin(math::PiOver2), -std::cos(math::PiOver2));
     );
 }
 
-[[nodiscard]] Segment Ray::to_segment() const
+[[nodiscard]] Segment Ray::to_segment(double Distance) const
 {
-    return Segment(start, distant_point());
+    return Segment(start, Point(
+        start.x + (std::sin(angle) * Distance),
+        start.y + (std::cos(angle) * Distance)
+    ));
 }
 
 // Point
@@ -128,7 +131,7 @@ Point Point::Right = Point(-std::sin(math::PiOver2), -std::cos(math::PiOver2));
 
 [[nodiscard]] IntersectResult Segment::intersect_list(const std::vector<Segment>& Others) const
 {
-    auto GetDistanceSquared = [](const Point& Delta, double& DistanceSquaredOut) -> double {
+    auto GetDistanceSquared = [](const Point Delta, double& DistanceSquaredOut) -> double {
         DistanceSquaredOut = Delta.dot(Delta);
         return DistanceSquaredOut;
     };
