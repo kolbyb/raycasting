@@ -83,7 +83,6 @@ public:
 
         if (ClosestDistance > 1.0e-04)
         {
-            std::cout << ClosestDistance << "\n";
             location += MovePoint;
         }
     }

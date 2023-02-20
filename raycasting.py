@@ -301,7 +301,7 @@ game_map = """
 ####################
 """
 
-map_wall_segments = make_map(game_map)
+#map_wall_segments = make_map(game_map)
 
 pygame.init()
 
@@ -346,12 +346,13 @@ serializer = serialization.CppyySerializer(
 
 w = MakeWorld()
 with open('custom.map', 'r') as file:
+#with open('maze.map', 'r') as file:
     serializer.deserialize(w, json.load(file))
 #w.walls = map_wall_segments
-map_wall_segments = w.walls
+#map_wall_segments = w.walls
 
 m = MapDisplay(
-     map_wall_segments, # Map Walls to calculate Dimensions
+     w.walls, # Map Walls to calculate Dimensions
      (Point(2.0, 2.0), Point(2.0, 10.0)), # Padding for the 2d Display
      (256, 256), # 2d Display Size
      DebugOptions([
@@ -449,10 +450,6 @@ def draw_results(rays, results, col_offset: int):
 
         last_color = color
         col += 1
-
-w = MakeWorld()
-with open('custom.map', 'r') as file:
-    serializer.deserialize(w, json.load(file))
 
 while True:
     pygame.display.get_surface().fill((0, 0, 0))
