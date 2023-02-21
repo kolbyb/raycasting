@@ -60,7 +60,7 @@ class EditorCamera():
         self.__mouse_move = pygame.mouse.get_rel()
 
         if pygame.mouse.get_pressed()[2]:
-            move = Point(self.__mouse_move[0] / self.zoom, -self.__mouse_move[1] / self.zoom)
+            move = Point(-self.__mouse_move[0] / self.zoom, self.__mouse_move[1] / self.zoom)
             self.location += move
         else:
             self.__mouse_move = None
