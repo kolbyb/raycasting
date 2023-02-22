@@ -262,7 +262,10 @@ class MapDisplay:
             return None
 
         # The coordinate system is flipped, so subtract our x from the Map's max dimensions
-        return Point((self.__dimensions[1].x - point.x) / self.__scale * self.__display_size[0], (point.y - self.__dimensions[0].y) / self.__scale * self.__display_size[1])
+        return Point(
+            -(self.__dimensions[1].x - point.x) / self.__scale * self.__display_size[0] + self.__display_size[0],
+            -(point.y - self.__dimensions[0].y) / self.__scale * self.__display_size[1] + self.__display_size[1]
+        )
 
     def __calculate_dimensions(segments: list[Segment], padding: tuple[Point, Point]):
         minimum = Point(0.0, 0.0)
