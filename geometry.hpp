@@ -216,6 +216,7 @@ public:
     [[nodiscard]] double max_x() const;
     [[nodiscard]] double min_y() const;
     [[nodiscard]] double max_y() const;
+    [[nodiscard]] Point mid() const;
     [[nodiscard]] Point normal() const;
     [[nodiscard]] Point surface_normal() const;
     [[nodiscard]] double slope() const;

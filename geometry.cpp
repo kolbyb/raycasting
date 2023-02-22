@@ -62,6 +62,11 @@ Point Point::Right = Point(-std::sin(math::PiOver2), -std::cos(math::PiOver2));
     return std::max(start.y, end.y);
 }
 
+[[nodiscard]] Point Segment::mid() const
+{
+    return start + (end - start) * 0.5;
+}
+
 [[nodiscard]] Point Segment::normal() const
 {
     return delta().normal();
